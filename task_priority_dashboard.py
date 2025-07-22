@@ -6,7 +6,7 @@ import joblib
 # =====================
 # 🔹 Load Models & Encoders
 # =====================
-priority_model = joblib.load("priority_xgboost.pkl")  # or priority_random_forest.pkl
+priority_model = joblib.load("priority_xgboost.pkl")
 priority_label_encoder = joblib.load("priority_label_encoder.pkl")
 priority_vectorizer = joblib.load("priority_tfidf_vectorizer.pkl")
 
@@ -15,7 +15,7 @@ category_label_encoder = joblib.load("category_label_encoder.pkl")
 task_vectorizer = joblib.load("task_tfidf_vectorizer.pkl")
 
 # =====================
-# 🔹 Load Dataset (to access user workload)
+# 🔹 Load Dataset (for user workload + historical data)
 # =====================
 @st.cache_data
 def load_data():
@@ -51,19 +51,36 @@ if submitted:
     days_left = (deadline - today).days
     urgency_score = max(0, 10 - days_left)
 
-    # 🔸 Determine user workload
-    user_workload_df = df.groupby("assigned_user")["user_current_load"].mean().reset_index()
-    user_workload_df["urgency_score"] = urgency_score
-    user_workload_df["combined_score"] = user_workload_df["user_current_load"] + urgency_score
+    # 🔸 User workload
+    workload_df = df.groupby("assigned_user")["user_current_load"].mean().reset_index()
+    workload_df.columns = ["user", "user_current_load"]
 
-    # 🔸 Assign task to user with lowest combined score
-    assigned_user = user_workload_df.sort_values("combined_score").iloc[0]["assigned_user"]
+    # 🔸 Filter users who handled same category
+    category_matches = df[df["category"] == pred_category]
+    matching_users = category_matches["assigned_user"].value_counts().index.tolist()
 
-    # ✅ Final Output
+    # 🔸 Filter out high workload users (> 20)
+    matching_users_filtered = []
+    for user in matching_users:
+        current_load = workload_df[workload_df["user"] == user]["user_current_load"]
+        if not current_load.empty and current_load.values[0] <= 20:
+            matching_users_filtered.append((user, current_load.values[0]))
+
+    # 🔸 Choose user
+    if matching_users_filtered:
+        # Select user with lowest workload among filtered matches
+        assigned_user = sorted(matching_users_filtered, key=lambda x: x[1])[0][0]
+    else:
+        # Fall back to lowest workload + urgency score
+        workload_df["combined_score"] = workload_df["user_current_load"] + urgency_score
+        assigned_user = workload_df.sort_values("combined_score").iloc[0]["user"]
+
+    # ✅ Display assignment
     st.success(f"✅ Task Assigned to: **{assigned_user}**")
     st.info(f"🔺 Priority: **{pred_priority}** | 📁 Category: **{pred_category}** | 🗓 Days to Deadline: {days_left}")
 
-    # 🔸 Show only assigned user’s workload
-    current_load = user_workload_df[user_workload_df["assigned_user"] == assigned_user]["user_current_load"].values[0]
+    # 🔸 Show only the assigned user’s workload
+    assigned_load = workload_df[workload_df["user"] == assigned_user]["user_current_load"].values[0]
     st.write("📊 **Current Workload of Assigned User:**")
-    st.write(f"**{assigned_user}** has **{int(current_load)}** tasks currently.")
+    st.write(f"**{assigned_user}** has **{int(assigned_load)}** tasks currently.")
+
