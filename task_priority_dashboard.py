@@ -1,46 +1,62 @@
-code = '''import streamlit as st
+import streamlit as st
+import pandas as pd
+import datetime
 import joblib
 
-# Load vectorizer and label encoder
+# --- Load Models ---
 vectorizer = joblib.load("priority_tfidf_vectorizer.pkl")
+priority_model = joblib.load("priority_xgboost.pkl")
 label_encoder = joblib.load("priority_label_encoder.pkl")
 
-# Load models
-models = {
-    "Optimized Random Forest": joblib.load("optimized_rf_model.pkl"),
-    "Random Forest": joblib.load("priority_random_forest.pkl"),
-    "XGBoost": joblib.load("priority_xgboost.pkl")
-}
+# --- Sample Users List ---
+users = ["Alice", "Bob", "Charlie", "David"]
 
-# UI
-st.title("🧠 AI-Powered Task Priority Predictor")
-st.subheader("📝 Enter your task description")
+# --- Initialize Workload Tracker ---
+if "user_workload" not in st.session_state:
+    st.session_state.user_workload = {user: 0 for user in users}
 
-task_input = st.text_area("Task", placeholder="e.g. Send status update to manager")
+# --- Title ---
+st.title("🧠 AI Task Assignment Assistant")
 
-selected_model_name = st.selectbox("🤖 Choose Model for Prediction", list(models.keys()))
+# --- Task Form ---
+with st.form("task_form"):
+    task_desc = st.text_area("📝 Enter Task Description")
+    deadline = st.date_input("📅 Deadline", min_value=datetime.date.today())
+    submitted = st.form_submit_button("Assign Task")
 
-if st.button("🔍 Predict Priority"):
-    if task_input.strip() == "":
+if submitted:
+    if not task_desc.strip():
         st.warning("Please enter a task description.")
     else:
-        try:
-            # Vectorize input
-            input_vector = vectorizer.transform([task_input])
+        # --- Preprocess and Predict ---
+        vectorized = vectorizer.transform([task_desc])
+        encoded_pred = priority_model.predict(vectorized)[0]
+        predicted_priority = label_encoder.inverse_transform([encoded_pred])[0]
 
-            # Predict using selected model
-            model = models[selected_model_name]
-            prediction = model.predict(input_vector)
+        # --- Deadline Urgency ---
+        today = datetime.date.today()
+        days_left = (deadline - today).days
+        urgency_score = max(0, 10 - days_left)
 
-            # Decode label
-            predicted_label = label_encoder.inverse_transform(prediction)[0]
+        # --- Assign Task to User with Minimum (Workload + Urgency) ---
+        best_user = min(
+            users,
+            key=lambda u: st.session_state.user_workload[u] + urgency_score
+        )
+        st.session_state.user_workload[best_user] += 1
 
-            st.success(f"✅ Predicted Priority: {predicted_label}")
-        except Exception as e:
-            st.error(f"❌ An error occurred during prediction: {e}")
-'''
-with open("task_priority_dashboard.py", "w") as f:
-    f.write(code)
+        # --- Output ---
+        st.success(f"✅ Task assigned to **{best_user}**")
+        st.info(f"🧠 Predicted Priority: **{predicted_priority}**")
+        st.write(f"⏳ Days Left: `{days_left}`")
 
-print("✅ File saved as task_priority_dashboard.py")
+        st.subheader("📊 Current Workload")
+        st.write(pd.DataFrame.from_dict(st.session_state.user_workload, orient="index", columns=["Tasks Assigned"]))
+
+# --- Reset Button ---
+if st.button("🔄 Reset Workload"):
+    for user in users:
+        st.session_state.user_workload[user] = 0
+    st.success("Workload reset!")
+
 
