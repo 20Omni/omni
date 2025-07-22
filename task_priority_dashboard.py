@@ -8,8 +8,9 @@ vectorizer = joblib.load("priority_tfidf_vectorizer.pkl")
 priority_model = joblib.load("priority_xgboost.pkl")
 priority_label_encoder = joblib.load("priority_label_encoder.pkl")
 
-rf_model = joblib.load("optimized_rf_model.pkl")  # For category prediction
-category_label_encoder = joblib.load("category_label_encoder.pkl")
+rf_model = joblib.load("optimized_rf_model.pkl")
+tfidf_vectorizer = joblib.load("task_tfidf_vectorizer.pkl")
+category_encoder = joblib.load("category_label_encoder.pkl")
 
 # 🔹 Load dataset
 @st.cache_data
