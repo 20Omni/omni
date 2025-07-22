@@ -1,4 +1,4 @@
-import streamlit as st
+code = '''import streamlit as st
 import joblib
 
 # Load vectorizer and label encoder
@@ -38,3 +38,9 @@ if st.button("🔍 Predict Priority"):
             st.success(f"✅ Predicted Priority: {predicted_label}")
         except Exception as e:
             st.error(f"❌ An error occurred during prediction: {e}")
+'''
+with open("task_priority_dashboard.py", "w") as f:
+    f.write(code)
+
+print("✅ File saved as task_priority_dashboard.py")
+
