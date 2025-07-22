@@ -6,7 +6,7 @@ import joblib
 # =====================
 # 🔹 Load Models & Encoders
 # =====================
-priority_model = joblib.load("priority_xgboost.pkl")
+priority_model = joblib.load("priority_xgboost.pkl")  # or use priority_random_forest.pkl
 priority_label_encoder = joblib.load("priority_label_encoder.pkl")
 priority_vectorizer = joblib.load("priority_tfidf_vectorizer.pkl")
 
@@ -15,7 +15,7 @@ category_label_encoder = joblib.load("category_label_encoder.pkl")
 task_vectorizer = joblib.load("task_tfidf_vectorizer.pkl")
 
 # =====================
-# 🔹 Load Dataset (for user workload + historical data)
+# 🔹 Load Dataset
 # =====================
 @st.cache_data
 def load_data():
@@ -49,38 +49,44 @@ if submitted:
     # 🔸 Compute deadline urgency
     today = datetime.date.today()
     days_left = (deadline - today).days
-    urgency_score = max(0, 10 - days_left)
+    urgency_score = max(0, 10 - days_left)  # closer deadline → more urgency
 
-    # 🔸 User workload
-    workload_df = df.groupby("assigned_user")["user_current_load"].mean().reset_index()
-    workload_df.columns = ["user", "user_current_load"]
+    # 🔸 Group workload by user from dataset
+    user_workload_df = df.groupby("assigned_user")["user_current_load"].mean().reset_index()
+    user_workload_df.rename(columns={"user_current_load": "avg_workload"}, inplace=True)
 
-    # 🔸 Filter users who handled same category
-    category_matches = df[df["category"] == pred_category]
-    matching_users = category_matches["assigned_user"].value_counts().index.tolist()
+    # 🔸 Filter users who handled the predicted category
+    matching_users = df[df["category"] == pred_category]["assigned_user"].unique()
+    matching_users_filtered = user_workload_df[
+        (user_workload_df["assigned_user"].isin(matching_users)) &
+        (user_workload_df["avg_workload"] <= 20)  # avoid overloaded users
+    ].copy()
 
-    # 🔸 Filter out high workload users (> 20)
-    matching_users_filtered = []
-    for user in matching_users:
-        current_load = workload_df[workload_df["user"] == user]["user_current_load"]
-        if not current_load.empty and current_load.values[0] <= 20:
-            matching_users_filtered.append((user, current_load.values[0]))
+    matching_users_filtered["urgency_score"] = urgency_score
+    matching_users_filtered["combined_score"] = matching_users_filtered["avg_workload"] + urgency_score
 
-    # 🔸 Choose user
-    if matching_users_filtered:
-        # Select user with lowest workload among filtered matches
-        assigned_user = sorted(matching_users_filtered, key=lambda x: x[1])[0][0]
+    # Show matching users for debugging
+    st.write("🕵️ Matching Users (category + workload ≤ 20):")
+    st.dataframe(matching_users_filtered)
+
+    if not matching_users_filtered.empty:
+        # Assign user with lowest combined score
+        assigned_user = matching_users_filtered.sort_values("combined_score").iloc[0]["assigned_user"]
     else:
-        # Fall back to lowest workload + urgency score
-        workload_df["combined_score"] = workload_df["user_current_load"] + urgency_score
-        assigned_user = workload_df.sort_values("combined_score").iloc[0]["user"]
+        assigned_user = "No available user"
 
-    # ✅ Display assignment
-    st.success(f"✅ Task Assigned to: **{assigned_user}**")
-    st.info(f"🔺 Priority: **{pred_priority}** | 📁 Category: **{pred_category}** | 🗓 Days to Deadline: {days_left}")
+    # ✅ Final Result
+    if assigned_user != "No available user":
+        st.success(f"✅ Task Assigned to: **{assigned_user}**")
+        st.info(f"🔺 Priority: **{pred_priority}** | 📁 Category: **{pred_category}** | 🗓 Days to Deadline: {days_left}")
 
-    # 🔸 Show only the assigned user’s workload
-    assigned_load = workload_df[workload_df["user"] == assigned_user]["user_current_load"].values[0]
-    st.write("📊 **Current Workload of Assigned User:**")
-    st.write(f"**{assigned_user}** has **{int(assigned_load)}** tasks currently.")
+        current_load = matching_users_filtered[
+            matching_users_filtered["assigned_user"] == assigned_user
+        ]["avg_workload"].values[0]
+
+        st.write("📊 **Current Workload of Assigned User:**")
+        st.write(f"**{assigned_user}** has **{round(current_load, 2)}** average tasks.")
+    else:
+        st.warning("⚠️ No suitable user found to assign this task. All are overloaded or unmatched.")
+
 
