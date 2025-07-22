@@ -3,14 +3,18 @@ import pandas as pd
 import datetime
 import joblib
 
-# 🔹 Load models
-vectorizer = joblib.load("priority_tfidf_vectorizer.pkl")
-priority_model = joblib.load("priority_xgboost.pkl")
-priority_label_encoder = joblib.load("priority_label_encoder.pkl")
+import joblib
 
+# Priority Prediction
+priority_model = joblib.load("priority_xgboost.pkl")  # or use priority_random_forest.pkl
+priority_label_encoder = joblib.load("priority_label_encoder.pkl")
+priority_vectorizer = joblib.load("priority_tfidf_vectorizer.pkl")
+
+# Task Classification
 rf_model = joblib.load("optimized_rf_model.pkl")
-tfidf_vectorizer = joblib.load("task_tfidf_vectorizer.pkl")
-category_encoder = joblib.load("category_label_encoder.pkl")
+category_label_encoder = joblib.load("category_label_encoder.pkl")
+task_vectorizer = joblib.load("task_tfidf_vectorizer.pkl")
+
 
 # 🔹 Load dataset
 @st.cache_data
@@ -32,13 +36,18 @@ if submitted:
     # 👉 Vectorize task description
     task_vector = vectorizer.transform([task_desc])
 
-    # 🔹 Predict Priority
-    pred_priority_enc = priority_model.predict(task_vector)[0]
-    pred_priority = priority_label_encoder.inverse_transform([pred_priority_enc])[0]
+   # Get user input
+task_vector_for_priority = priority_vectorizer.transform([task_desc])
+task_vector_for_category = task_vectorizer.transform([task_desc])
 
-    # 🔹 Predict Category
-    pred_category_enc = rf_model.predict(task_vector)[0]
-    pred_category = category_label_encoder.inverse_transform([pred_category_enc])[0]
+# Predict priority
+priority_pred_encoded = priority_model.predict(task_vector_for_priority)[0]
+priority = priority_label_encoder.inverse_transform([priority_pred_encoded])[0]
+
+# Predict category
+category_pred_encoded = rf_model.predict(task_vector_for_category)[0]
+category = category_label_encoder.inverse_transform([category_pred_encoded])[0]
+
 
     # 🔹 Compute deadline urgency
     today = datetime.date.today()
